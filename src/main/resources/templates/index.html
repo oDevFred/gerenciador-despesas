@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Gerenciador de Despesas</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="container mt-5">
+    <h1 class="mb-4">Gerenciador de Despesas</h1>
+
+    <div class="card card-body mb-4">
+        <h5>Nova Despesa</h5>
+        <form id="form-despesa" class="row g-3">
+            <div class="col-md-4">
+                <input type="text" id="desc" class="form-control" placeholder="Descrição" required>
+            </div>
+            <div class="col-md-2">
+                <input type="number" id="valor" class="form-control" placeholder="Valor" step="0.01" required>
+            </div>
+            <div class="col-md-3">
+                <input type="date" id="data" class="form-control" required>
+            </div>
+
+            <div class="col-md-2">
+                <select id="cat" class="form-select">
+                    <option value="ALIMENTACAO">Alimentação</option>
+                    <option value="TRANSPORTE">Transporte</option>
+                    <option value="LAZER">Lazer</option>
+                    <option value="SAUDE">Saúde</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary w-100">Add</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <input type="text" id="filtro-desc" class="form-control" placeholder="🔍 Filtrar por descrição..." onkeyup="filtrarTabela()">
+        </div>
+        <div class="col-md-4">
+            <select id="filtro-cat" class="form-select" onchange="filtrarTabela()">
+                <option value="">Todas as Categorias</option>
+                <option value="ALIMENTACAO">Alimentação</option>
+                <option value="TRANSPORTE">Transporte</option>
+                <option value="LAZER">Lazer</option>
+                <option value="SAUDE">Saúde</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card bg-success text-white shadow">
+                <div class="card-body">
+                    <h5 class="card-title">Total de Gastos</h5>
+                    <h2 id="total-gastos">R$ 0,00</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card bg-primary text-white shadow">
+                <div class="card-body">
+                    <h5 class="card-title">Qtd. de Despesas</h5>
+                    <h2 id="qtd-despesas">0</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <table class="table table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th onclick="ordenarTabela(0)" style="cursor:pointer">Descrição ↕</th>
+                <th onclick="ordenarTabela(1)" style="cursor:pointer">Valor ↕</th>
+                <th onclick="ordenarTabela(2)" style="cursor:pointer">Data ↕</th>
+                <th onclick="ordenarTabela(3)" style="cursor:pointer">Categoria ↕</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody id="tabela-corpo"></tbody>
+    </table>
+
+    <script>
+        let idEdicao = null; // Guarda o ID quando estivermos editando
+
+        let ordemAscendente = true;
+
+        function ordenarTabela(colunaIndex) {
+            const tabela = document.getElementById("tabela-corpo");
+            const linhas = Array.from(tabela.rows);
+
+            // Alterna entre ascendente e descendente
+            ordemAscendente = !ordemAscendente;
+
+            const linhasOrdenadas = linhas.sort((a, b) => {
+                let valorA = a.cells[colunaIndex].innerText.toLowerCase();
+                let valorB = b.cells[colunaIndex].innerText.toLowerCase();
+
+                // Tratamento especial para números (coluna de Valor)
+                if (colunaIndex === 1) {
+                    valorA = parseFloat(valorA.replace('R$', '').replace('.', '').replace(',', '.'));
+                    valorB = parseFloat(valorB.replace('R$', '').replace('.', '').replace(',', '.'));
+                }
+                
+                // Tratamento para datas (coluna de Data)
+                if (colunaIndex === 2) {
+                    valorA = new Date(valorA);
+                    valorB = new Date(valorB);
+                }
+
+                if (valorA < valorB) return ordemAscendente ? -1 : 1;
+                if (valorA > valorB) return ordemAscendente ? 1 : -1;
+                return 0;
+            });
+
+            // Reinsere as linhas ordenadas na tabela
+            tabela.append(...linhasOrdenadas);
+        }
+
+        // 1. LISTAR (GET)
+        async function carregarDespesas() {
+            const resposta = await fetch('/api/expense');
+            const despesas = await resposta.json();
+            const corpoTabela = document.getElementById('tabela-corpo');
+            corpoTabela.innerHTML = '';
+
+            despesas.forEach(exp => {
+                corpoTabela.innerHTML += `
+                    <tr>
+                        <td>${exp.description}</td>
+                        <td>R$ ${exp.amount}</td> <td>${exp.date}</td>
+                        <td><span class="badge bg-info">${exp.category}</span></td>
+                        <td>
+                            <button class="btn btn-warning btn-sm" 
+                                onclick="prepararEdicao(${exp.id}, '${exp.description}', ${exp.amount}, '${exp.date}', '${exp.category}')">
+                                Editar
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="deletar(${exp.id})">Excluir</button>
+                        </td>
+                    </tr>`;
+            });
+
+            atualizarResumo();
+        }
+
+        async function atualizarResumo() {
+                try {
+                    const resposta = await fetch('/api/expense/summary');
+                    const dados = await resposta.json();
+                    
+                    // Aqui usamos 'totalAmount' e 'count' porque são os nomes no seu Record/DTO
+                    document.getElementById('total-gastos').innerText = 
+                        new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dados.totalAmount || 0);
+                    
+                    document.getElementById('qtd-despesas').innerText = dados.count || 0;
+                } catch (erro) {
+                    console.error("Erro ao buscar resumo:", erro);
+                }
+            }
+
+        // 2. CADASTRAR (POST)
+        document.getElementById('form-despesa').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const despesa = {
+                description: document.getElementById('desc').value,
+                amount: parseFloat(document.getElementById('valor').value),
+                date: document.getElementById('data').value,
+                category: document.getElementById('cat').value
+            };
+
+            let url = '/api/expense';
+            let metodo = 'POST';
+
+            // Se tivermos um ID, mudamos para PUT e ajustamos a URL
+            if (idEdicao) {
+                url += `/${idEdicao}`;
+                metodo = 'PUT';
+            }
+
+            await fetch(url, {
+                method: metodo,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(despesa)
+            });
+
+            // Reseta tudo após salvar
+            idEdicao = null;
+            e.target.reset();
+            const btn = document.querySelector('#form-despesa button');
+            btn.innerText = "Add";
+            btn.classList.replace('btn-warning', 'btn-primary');
+            
+            carregarDespesas();
+        });
+
+        function prepararEdicao(id, desc, valor, data, cat) {
+            idEdicao = id; // Ativa o modo edição
+            
+            // Preenche os campos do formulário
+            document.getElementById('desc').value = desc;
+            document.getElementById('valor').value = valor;
+            document.getElementById('data').value = data;
+            document.getElementById('cat').value = cat;
+            
+            // Muda o visual do botão para dar feedback ao usuário
+            const btn = document.querySelector('#form-despesa button');
+            btn.innerText = "Atualizar";
+            btn.classList.replace('btn-primary', 'btn-warning');
+        }
+
+        function filtrarTabela() {
+            const texto = document.getElementById('filtro-desc').value.toLowerCase();
+            const categoria = document.getElementById('filtro-cat').value;
+            const linhas = document.querySelectorAll('#tabela-corpo tr');
+
+            linhas.forEach(linha => {
+                const desc = linha.cells[0].innerText.toLowerCase();
+                const cat = linha.cells[3].innerText; // Coluna da categoria
+
+                // Lógica: Se a descrição contém o texto E (categoria é vazia OU categoria combina)
+                const combinaDesc = desc.includes(texto);
+                const combinaCat = categoria === "" || cat.includes(categoria);
+
+                if (combinaDesc && combinaCat) {
+                    linha.style.display = "";
+                } else {
+                    linha.style.display = "none";
+                }
+            });
+        }
+
+        // 3. EXCLUIR (DELETE)
+        async function deletar(id) {
+            if (confirm('Deseja excluir esta despesa?')) {
+                await fetch(`/api/expense/${id}`, { method: 'DELETE' });
+                carregarDespesas();
+            }
+        }
+
+        carregarDespesas();
+    </script>
+</body>
+</html>

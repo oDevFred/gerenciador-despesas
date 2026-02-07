@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>About</title>
+    <link rel="stylesheet" th:href="@{/styles.css}">
+</head>
+<body>
+    <th:block th:replace="fragments/header :: header"></th:block>
+    <h1 th:text="${message}">Mensagem Padrão</h1>
+</body>
+</html>
